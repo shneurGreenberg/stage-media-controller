@@ -182,7 +182,7 @@ function connectToSession(code) {
   window.history.replaceState({}, '', url.toString());
 
   client = new RemoteClient(sessionId, {
-    onStatusChange: async (status) => {
+    onStatusChange: async (status, detail) => {
       if (status === 'connected') {
         connDot.className = 'conn-dot online';
         connSubtitle.textContent = 'מסך הבמה מחובר בזמן אמת (P2P)';
@@ -196,7 +196,17 @@ function connectToSession(code) {
         }
       } else if (status === 'reconnecting') {
         connDot.className = 'conn-dot warn';
-        connSubtitle.textContent = 'מנסה להתחבר מחדש למסך הבמה...';
+        const reasons = {
+          'peer-unavailable': 'המסך עדיין לא נמצא. ודאו שדף המסך פתוח (אפשר לרענן אותו)',
+          timeout: 'הקשר לא נוצר, מנסה שוב (ייתכן שהרשת חוסמת)',
+          network: 'אין חיבור לשרת התיאום, מנסה שוב',
+          'server-error': 'שרת התיאום לא זמין, מנסה שוב',
+          'socket-error': 'שרת התיאום לא זמין, מנסה שוב',
+          'socket-closed': 'שרת התיאום לא זמין, מנסה שוב',
+          'webrtc': 'שגיאת חיבור ישיר, מנסה שוב',
+        };
+        const why = reasons[detail?.reason];
+        connSubtitle.textContent = why || 'מנסה להתחבר מחדש למסך הבמה...';
       } else {
         connDot.className = 'conn-dot warn';
         connSubtitle.textContent = 'מתחבר למסך הבמה...';

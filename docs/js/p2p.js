@@ -7,16 +7,40 @@
 
 const PEER_PREFIX = 'smctrl-stage-v1-';
 const CHUNK_SIZE = 32 * 1024;
+// STUN (several providers, not only Google: reachable from Russia) + TURN relay fallback.
+// TURN is what makes it work when the phone is on mobile data (CGNAT / symmetric NAT)
+// and the screen PC is on another network. Candidates are tried in parallel by the browser.
+const ICE_SERVERS = [
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:global.stun.twilio.com:3478' },
+  {
+    urls: [
+      'turn:turn.evan-brass.net',
+      'turn:turn.evan-brass.net?transport=tcp',
+      'turns:turn.evan-brass.net:443?transport=tcp',
+    ],
+    username: 'guest',
+    credential: 'password',
+  },
+  {
+    urls: [
+      'turn:freeturn.net:3478',
+      'turn:freeturn.net:3478?transport=tcp',
+      'turns:freeturn.net:5349',
+    ],
+    username: 'free',
+    credential: 'free',
+  },
+];
 const PEER_CONFIG = {
   debug: 0,
   config: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-    ],
+    iceServers: ICE_SERVERS,
+    iceCandidatePoolSize: 2,
   },
 };
+const DIAL_TIMEOUT_MS = 18000;
 
 export function makeSessionCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -135,8 +159,18 @@ export class StageHost {
     });
 
     this.peer.on('error', (err) => {
-      console.warn('[StageHost] PeerJS error:', err?.type || err);
+      const type = err?.type || String(err);
+      console.warn('[StageHost] PeerJS error:', type);
       this.onStatusChange?.('error', err);
+      // Recover: ID still held by a previous page load, or signaling server hiccup.
+      if (['unavailable-id', 'network', 'server-error', 'socket-error', 'socket-closed'].includes(type)) {
+        clearTimeout(this._retryTimer);
+        this._retryTimer = setTimeout(() => {
+          if (this.destroyed) return;
+          try { this.peer?.destroy(); } catch {}
+          this._initPeer();
+        }, type === 'unavailable-id' ? 4000 : 3000);
+      }
     });
   }
 
@@ -261,24 +295,33 @@ export class RemoteClient {
 
   _connectPeer() {
     if (!window.Peer || this.destroyed) return;
+    clearTimeout(this._dialTimer);
     if (this.peer) {
       try { this.peer.destroy(); } catch {}
     }
 
-    this.peer = new window.Peer(PEER_CONFIG);
-    this.peer.on('open', () => {
-      if (this.destroyed || this.transport === 'bc') return;
+    const peer = new window.Peer(PEER_CONFIG);
+    this.peer = peer;
+    peer.on('open', () => {
+      if (this.peer !== peer || this.destroyed || this.transport === 'bc') return;
       this._dialStage();
     });
 
-    this.peer.on('error', (err) => {
-      console.warn('[RemoteClient] PeerJS error:', err?.type || err);
-      if (this.transport === 'bc' || this.destroyed) return;
+    peer.on('disconnected', () => {
+      // Lost the signaling server: reconnect keeping the same peer object.
+      if (this.peer !== peer || this.destroyed || peer.destroyed) return;
+      setTimeout(() => { try { if (!peer.destroyed) peer.reconnect(); } catch {} }, 1500);
+    });
+
+    peer.on('error', (err) => {
+      const type = err?.type || String(err);
+      console.warn('[RemoteClient] PeerJS error:', type);
+      if (this.peer !== peer || this.transport === 'bc' || this.destroyed) return;
       this.connected = false;
-      this.onStatusChange?.('reconnecting');
+      this.onStatusChange?.('reconnecting', { reason: type });
       setTimeout(() => {
         if (!this.destroyed && !this.connected && this.transport !== 'bc') {
-          if (this.peer && !this.peer.destroyed && this.peer.open) {
+          if (type === 'peer-unavailable' && peer.open && !peer.destroyed) {
             this._dialStage();
           } else {
             this._connectPeer();
@@ -290,11 +333,21 @@ export class RemoteClient {
 
   _dialStage() {
     if (!this.peer || this.peer.destroyed || this.transport === 'bc') return;
+    clearTimeout(this._dialTimer);
+    if (this.conn) { try { this.conn.close(); } catch {} }
     const targetId = `${PEER_PREFIX}${this.sessionId}`;
     const conn = this.peer.connect(targetId, { reliable: true, serialization: 'binary' });
     this.conn = conn;
 
+    // If the data channel does not open (ICE failed / stage not there yet), start over with a fresh peer.
+    this._dialTimer = setTimeout(() => {
+      if (this.destroyed || this.connected || this.transport === 'bc' || this.conn !== conn) return;
+      this.onStatusChange?.('reconnecting', { reason: 'timeout' });
+      this._connectPeer();
+    }, DIAL_TIMEOUT_MS);
+
     conn.on('open', () => {
+      clearTimeout(this._dialTimer);
       if (this.transport === 'bc') {
         conn.close();
         return;
@@ -307,18 +360,18 @@ export class RemoteClient {
     conn.on('data', (msg) => this._handleIncoming(msg));
 
     conn.on('close', () => {
-      if (this.transport !== 'peer' || this.destroyed) return;
+      if (this.conn !== conn || this.transport !== 'peer' || this.destroyed) return;
       this.connected = false;
-      this.onStatusChange?.('reconnecting');
+      this.onStatusChange?.('reconnecting', { reason: 'closed' });
       setTimeout(() => {
-        if (!this.destroyed && !this.connected) this._dialStage();
+        if (!this.destroyed && !this.connected) this._connectPeer();
       }, 2000);
     });
 
     conn.on('error', () => {
-      if (this.transport !== 'peer' || this.destroyed) return;
+      if (this.conn !== conn || this.transport !== 'peer' || this.destroyed) return;
       this.connected = false;
-      this.onStatusChange?.('reconnecting');
+      this.onStatusChange?.('reconnecting', { reason: 'conn-error' });
     });
   }
 
