@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stage Display — תצוגת במה</title>
+  <link rel="stylesheet" href="/stage.css" />
+</head>
+<body>
+  <div id="stageRoot" class="stage-root">
+    <!-- Master Background Dual Crossfade Buffers (Always underneath) -->
+    <div class="layer bg-layer">
+      <img id="bgImgA" class="bg-img active" src="/assets/default-master-bg.svg" alt="" decoding="async" />
+      <img id="bgImgB" class="bg-img" alt="" decoding="async" />
+    </div>
+
+    <!-- Active Visual Media (Images & Slides) Dual Crossfade Buffers -->
+    <div id="visualStage" class="layer visual-layer">
+      <div id="slideSlotA" class="slide-slot">
+        <img id="slideImgA" class="slide-img" alt="" decoding="async" />
+      </div>
+      <div id="slideSlotB" class="slide-slot">
+        <img id="slideImgB" class="slide-img" alt="" decoding="async" />
+      </div>
+    </div>
+
+    <!-- Video Playback Layer -->
+    <div id="videoLayer" class="layer video-layer">
+      <video id="stageVideo" class="stage-video" playsinline preload="auto"></video>
+    </div>
+
+    <!-- Subtle QR Pairing Card (Bottom-right, hidden cleanly via phone toggle) -->
+    <aside id="qrOverlay" class="qr-overlay visible" aria-label="סריקת קוד QR לחיבור השלט">
+      <div class="qr-card">
+        <div class="qr-img-wrap">
+          <img id="qrImage" class="qr-img" alt="QR Code" />
+        </div>
+        <div class="qr-meta">
+          <div class="qr-label">סרקו לחיבור השלט</div>
+          <div id="qrCodeText" class="qr-code">------</div>
+          <div id="qrUrlText" class="qr-url">טוען כתובת...</div>
+          <div id="qrStatusPill" class="qr-status">ממתין לשלט...</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- One-time Clean Activation Prompt (Vanishes on first click; unlocks Audio + Fullscreen) -->
+    <button id="unlockBanner" class="unlock-banner" type="button">
+      <span class="unlock-dot"></span>
+      <span>לחץ כאן להפעלת מסך מלא ושמע (נעלם מיד)</span>
+    </button>
+
+    <!-- Independent Persistent Background Audio Engine -->
+    <audio id="bgAudio" preload="auto"></audio>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/stage.js"></script>
+</body>
+</html>

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1120" />
+  <title>שלט במה — Mobile Remote</title>
+  <link rel="stylesheet" href="./remote.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar-right">
+        <div class="brand-row">
+          <span id="connDot" class="conn-dot offline"></span>
+          <h1 class="brand-title">שלט במה</h1>
+          <span id="sessionBadge" class="session-badge">------</span>
+        </div>
+        <div id="connSubtitle" class="conn-subtitle">מתחבר למסך הבמה...</div>
+      </div>
+      <div class="topbar-actions">
+        <button id="qrToggleBtn" class="icon-pill-btn" type="button" title="הצג או הסתר QR על המסך הראשי">
+          <span class="qr-pill-dot"></span>
+          <span id="qrToggleLabel">QR מוצג</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Manual Session Pairing Screen (Shown only if no ?session= in URL) -->
+    <section id="pairPrompt" class="pair-prompt hidden">
+      <div class="pair-card">
+        <h2>חיבור למסך הבמה</h2>
+        <p>הזן את קוד הסשן בן 6 התווים שמופיע בפינת מסך הבמה (או סרוק את קוד ה-QR).</p>
+        <form id="pairForm" class="pair-form">
+          <input
+            id="pairCodeInput"
+            class="pair-input"
+            type="text"
+            maxlength="12"
+            placeholder="לדוגמה: A7K9P2"
+            autocomplete="off"
+            required
+          />
+          <button class="btn btn-primary btn-lg" type="submit">התחבר למסך</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Main Controller Content -->
+    <main id="controllerMain" class="main-content">
+      <!-- Stage Audio Unlock Reminder -->
+      <div id="stageUnlockWarn" class="stage-warn hidden">
+        <span>🔊 לחץ פעם אחת על מסך הבמה במחשב כדי לאפשר שמע ומסך מלא.</span>
+      </div>
+
+      <!-- P2P Transfer Progress Banner -->
+      <div id="transferBanner" class="upload-progress hidden" style="padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;">
+        <div class="progress-track">
+          <div id="transferProgressFill" class="progress-fill"></div>
+        </div>
+        <span id="transferProgressText" class="progress-text">מעביר למסך...</span>
+      </div>
+
+      <!-- LIVE Program Status & Quick Controls -->
+      <section class="live-card" aria-label="מצב שידור חי">
+        <div class="live-header">
+          <div class="live-badge-group">
+            <span id="liveBadge" class="status-badge badge-idle">רקע ראשי</span>
+            <span id="liveTitle" class="live-title">המסך מציג את הרקע הראשי</span>
+          </div>
+          <button id="clearToBgBtn" class="btn btn-clear" type="button" disabled>
+            חזור לרקע ראשי
+          </button>
+        </div>
+
+        <!-- Live Slide Deck Controls -->
+        <div id="liveDeckControls" class="live-deck-controls hidden">
+          <div class="live-deck-counter">
+            <span>שקף בשידור:</span>
+            <strong id="liveSlideCounter">1 / 1</strong>
+          </div>
+          <div class="slide-nav-grid">
+            <button id="livePrevSlideBtn" class="btn btn-slide-nav" type="button">
+              <span class="nav-arrow">→</span>
+              <span>שקף קודם</span>
+            </button>
+            <button id="liveNextSlideBtn" class="btn btn-slide-nav btn-slide-next" type="button">
+              <span>שקף הבא</span>
+              <span class="nav-arrow">←</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Video Controls -->
+        <div id="liveVideoControls" class="live-video-controls hidden">
+          <div class="video-scrub-row">
+            <span id="videoTimeCurrent" class="timecode">00:00</span>
+            <input id="videoSeekSlider" class="range-slider" type="range" min="0" max="100" step="0.25" value="0" />
+            <span id="videoTimeDuration" class="timecode">00:00</span>
+          </div>
+          <div class="video-btn-row">
+            <button id="videoPlayPauseBtn" class="btn btn-secondary btn-flex" type="button">השהה ⏸</button>
+            <button id="videoRestartBtn" class="btn btn-ghost" type="button">מההתחלה ↺</button>
+            <button id="videoMuteBtn" class="btn btn-ghost" type="button">🔊</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Local PREVIEW Panel (Private on Phone — Stage does NOT change until "הצג על המסך") -->
+      <section id="previewPanel" class="preview-panel hidden" aria-label="תצוגה מקדימה מקומית">
+        <div class="preview-header">
+          <div class="preview-title-wrap">
+            <span class="status-badge badge-preview">תצוגה מקדימה · PREVIEW</span>
+            <h2 id="previewTitle" class="preview-title">---</h2>
+          </div>
+          <button id="closePreviewBtn" class="icon-close-btn" type="button" aria-label="סגור תצוגה מקדימה">✕</button>
+        </div>
+        <div class="preview-hint">מוצג בטלפון בלבד — המסך הראשי לא ישתנה עד שתלחץ "הצג על המסך"</div>
+
+        <!-- Preview Viewport -->
+        <div id="previewStageBox" class="preview-stage-box">
+          <img id="previewImage" class="preview-media hidden" alt="תצוגה מקדימה" />
+          <video id="previewVideo" class="preview-media hidden" controls playsinline muted></video>
+          <div id="previewLoader" class="preview-loader hidden">
+            <div class="spinner"></div>
+            <div id="previewLoaderText">טוען ומעבד שקפים...</div>
+          </div>
+
+          <div id="previewSlideIndicator" class="preview-slide-pill hidden">שקף 1 מתוך 1</div>
+          <div id="previewIsLiveTag" class="preview-live-pill hidden">בשידור חי כעת</div>
+        </div>
+
+        <!-- Deck Swipe / Step Controls & Scrollable Thumbnail Strip -->
+        <div id="previewDeckTools" class="preview-deck-tools hidden">
+          <div class="preview-deck-steppers">
+            <button id="previewPrevBtn" class="btn btn-ghost btn-sm" type="button">→ שקף קודם בתצוגה</button>
+            <span class="swipe-tip">ניתן להחליק על השקף</span>
+            <button id="previewNextBtn" class="btn btn-ghost btn-sm" type="button">שקף הבא בתצוגה ←</button>
+          </div>
+          <div id="previewThumbStrip" class="thumb-strip" role="listbox" aria-label="שקפי המצגת"></div>
+        </div>
+
+        <!-- Go Live CTA -->
+        <div class="preview-actions">
+          <button id="goLiveBtn" class="btn btn-go-live" type="button">
+            הצג על המסך
+          </button>
+        </div>
+      </section>
+
+      <!-- Media Library Tabs -->
+      <nav class="category-tabs" role="tablist" aria-label="ספריית המדיה">
+        <button class="tab-btn active" data-tab="decks" role="tab" aria-selected="true" type="button">
+          <span>מצגות</span>
+          <span id="countDecks" class="tab-count">0</span>
+        </button>
+        <button class="tab-btn" data-tab="images" role="tab" aria-selected="false" type="button">
+          <span>תמונות</span>
+          <span id="countImages" class="tab-count">0</span>
+        </button>
+        <button class="tab-btn" data-tab="videos" role="tab" aria-selected="false" type="button">
+          <span>וידאו</span>
+          <span id="countVideos" class="tab-count">0</span>
+        </button>
+        <button class="tab-btn" data-tab="audios" role="tab" aria-selected="false" type="button">
+          <span>אודיו</span>
+          <span id="countAudios" class="tab-count">0</span>
+        </button>
+        <button class="tab-btn" data-tab="backgrounds" role="tab" aria-selected="false" type="button">
+          <span>רקע ראשי</span>
+          <span id="countBackgrounds" class="tab-count">0</span>
+        </button>
+      </nav>
+
+      <!-- Upload Bar for Active Category -->
+      <section class="upload-bar">
+        <div class="upload-bar-top">
+          <div>
+            <div id="uploadHeading" class="upload-heading">העלאת מצגת או סט תמונות</div>
+            <div id="uploadSubtext" class="upload-subtext">תומך ב-PPTX, PDF או בחירת מספר תמונות יחד</div>
+          </div>
+          <label id="uploadTriggerLabel" class="btn btn-upload" for="fileUploadInput">
+            + הוסף קובץ
+          </label>
+          <input id="fileUploadInput" type="file" hidden />
+        </div>
+        <div id="uploadProgressRow" class="upload-progress hidden">
+          <div class="progress-track">
+            <div id="uploadProgressFill" class="progress-fill"></div>
+          </div>
+          <span id="uploadProgressText" class="progress-text">מעבד...</span>
+        </div>
+      </section>
+
+      <!-- Library Items Grid -->
+      <section id="libraryGrid" class="library-grid" aria-live="polite"></section>
+    </main>
+
+    <!-- Persistent Sticky Audio Mini-Player -->
+    <footer class="audio-bar" aria-label="נגן מוזיקת רקע">
+      <div class="audio-bar-top">
+        <div class="audio-info">
+          <span id="audioLiveDot" class="audio-dot"></span>
+          <div class="audio-text">
+            <div id="audioTrackTitle" class="audio-title">מוזיקת רקע — לא נבחר שיר</div>
+            <div id="audioTrackMeta" class="audio-meta">בחר רצועת שמע בלשונית "אודיו" להפעלה במקביל למסך</div>
+          </div>
+        </div>
+        <div class="audio-controls">
+          <button id="audioPlayPauseBtn" class="audio-btn audio-btn-main" type="button" disabled title="נגן / השהה">▶</button>
+          <button id="audioFadeBtn" class="audio-btn audio-btn-fade" type="button" disabled title="דעיכה הדרגתית (3 שניות)">דעיכה</button>
+          <button id="audioLoopBtn" class="audio-btn" type="button" title="נגינה בלופ">🔁</button>
+          <button id="audioStopBtn" class="audio-btn audio-btn-stop" type="button" disabled title="עצור">■</button>
+        </div>
+      </div>
+      <div class="audio-volume-row">
+        <span class="vol-icon">🔉</span>
+        <input id="audioVolumeSlider" class="range-slider" type="range" min="0" max="1" step="0.02" value="0.75" />
+        <span id="audioVolumePct" class="vol-pct">75%</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Toast feedback -->
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <script src="./vendor/peerjs.min.js"></script>
+  <script src="./vendor/jszip.min.js"></script>
+  <script type="module" src="./js/remote-static.js"></script>
+</body>
+</html>
